@@ -34,7 +34,7 @@ def test_algo(rules: list[Rule], *, inp: str, out: str, **kw: object) -> None:
 binary2unary = parse_algo(
     '''
      1 -> 0|
-    |0 -> 0|||
+    |0 -> 0||
      0 ->
        ->.
     '''

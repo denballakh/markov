@@ -188,7 +188,6 @@ def run_interactive(start: str, rules: list[Rule]) -> str:
 
             x, y, z = after[:i], after[i : i + len(rule.after)], after[i + len(rule.after) :]
             print(f'after:  {fmt_string(x, y, z, fg.BLACK + bg.GREEN)}')
-            # print(f'after:  [{fg.CYAN}{len(after):3}{reset}] {x}{bg.GREEN}{fg.BLACK}{y}{reset}{z}')
 
             print(f'rule: {idx:3}: {fmt_rule(rule)}')
             if s.rules[idx].terminating:
