@@ -1,0 +1,191 @@
+## Brainfuck interpreter
+
+# NOTE: this uses some syntactic sugar to get rid of boilerplate:
+# This is a way to define several similar rules at once:
+#     $$ A B C
+#     x$x -> y$y
+# It expands to the following rules:
+#     xAx -> yAy
+#     xBx -> yBy
+#     xCx -> yCy
+
+
+# Some configurable stuff:
+
+# how to represent printed bits in the output:
+[printed/0] -> 0
+[printed/1] -> 1
+[printed/sep] -> |
+
+# memory cell bit width:
+[make_cell] -> [cell/8bit]
+# [make_cell] -> [cell/16bit]
+# [make_cell] -> [cell/32bit]
+
+########################################
+########################################
+########################################
+
+# halting procedure:
+[code][halt][/code] -> [halt]
+$$  + - < > [ ] . ,
+$[halt][/code] -> [halt][/code]
+
+[input][/input][halt] -> [halt]
+[halt][memory] -> [halt]
+    [halt][mp] -> [halt]
+    [halt][cell]0 -> [halt][cell]
+    [halt][cell]1 -> [halt][cell]
+    [halt][cell][/cell] -> [halt]
+[halt][/memory] -> [halt]
+[halt] ->. # i decided i do not care about removing [output][/output]
+
+# mem cell types
+#                low v      v high
+[cell/8bit] -> [cell]00000000[/cell]
+[cell/16bit] -> [cell]0000000000000000[/cell]
+[cell/32bit] -> [cell]00000000000000000000000000000000[/cell]
+
+# decrement binary number, wrapping, little-endian (least significant bits are at the left end)
+[math/dec]1 -> 0
+[math/dec]0 -> 1[math/dec]
+[math/dec]  -> # nothing, underflow
+
+# increment binary number, wrapping, little-endian (least significant bits are at the left end)
+[math/inc]0 -> 1
+[math/inc]1 -> 0[math/inc]
+[math/inc]  -> # nothing, overflow
+
+
+
+# + -
+[do_plus][mp][cell] -> [mp][cell][math/inc]
+[do_minus][mp][cell] -> [mp][cell][math/dec]
+$$ [/code] [memory] [cell] 0 1 [/cell] + - < > [ ] . ,
+[do_plus]$ -> $[do_plus]
+[do_minus]$ -> $[do_minus]
+
+
+# ensure that we never run out of memory
+[mp][/memory] -> [mp][make_cell][/memory]
+# > <
+[do_right][mp] -> [do_right/2]
+    $$ [cell] 0 1
+    [do_right/2]$ -> $[do_right/2]
+    [do_right/2][/cell] -> [/cell][mp]
+[do_left][mp] -> [do_left/2]
+    $$ 0 1 [/cell]
+    $[do_left/2] -> [do_left/2]$
+    [cell][do_left/2] -> [mp][cell]
+    # if we have no memory to the left, make it:
+    [memory][do_left/2] -> [memory][mp][make_cell]
+$$ [/code] [memory] [cell] 0 1 [/cell] + - < > [ ] . ,
+[do_right]$ -> $[do_right]
+[do_left]$ -> $[do_left]
+
+# [
+# condidion is false => skip to the end
+# when we meet '[' - spawn a runner that will change the next ']' to '[label/loop_end]'
+# when we meet '[label/loop_end]' - change it back to ']'
+# when we meet ']' - it means that it was not changed => it has no corresponding '[' => we were inside of this loop at the start => it is the end we are searching for
+[wait_loop_start][fetch/false] -> [do_loop_skip]
+        $$ + - < > . , [label/loop_end] [
+        [do_loop_skip/disable_next]$ -> $[do_loop_skip/disable_next]
+        [do_loop_skip/disable_next]] -> [label/loop_end]
+    [do_loop_skip][label/loop_end] -> ][do_loop_skip]
+    [do_loop_skip]] -> ][ip]
+    [do_loop_skip][ -> [[do_loop_skip][do_loop_skip/disable_next]
+    $$ + - < > . ,
+    [do_loop_skip]$ -> $[do_loop_skip]
+# condition is true => just mark current position as a start of a running loop
+[wait_loop_start][fetch/true] -> [label/active_loop][ip]
+
+
+# ]
+# condition is false => just un-mark the current running loop
+[wait_loop_end][fetch/false] -> [do_loop_deactivate][ip]
+    [label/active_loop][do_loop_deactivate] -> # nothing
+    $$ + - < > [ ] . ,
+    $[do_loop_deactivate] -> [do_loop_deactivate]$
+# condition is true => go back to the opening bracket
+# luckily all running loops are marked with [label/active_loop], so just go back to the previous such label
+[wait_loop_end][fetch/true] -> [do_loop_go_back]
+    [label/active_loop][do_loop_go_back] -> [label/active_loop][ip]
+    $$ + - < > [ ] . ,
+    $[do_loop_go_back] -> [do_loop_go_back]$
+
+# .
+
+[do_print][mp] -> [mp][do_print/cell]
+$$ [/code] [memory] [cell] 0 1 [/cell] + - < > [ ] . ,
+[do_print]$ -> $[do_print]
+    [do_print/cell][cell] -> [cell][do_print/cell]
+    [do_print/cell]0 -> 0[do_print/cell]
+    [do_print/cell]1 -> 1[do_print/cell]
+    [do_print/cell][/cell] -> [do_print/cell/2][/cell]
+
+        $$ [cell] 0 1 [/cell] [/memory] [output] |
+        [printing/0]$ -> $[printing/0]
+        [printing/1]$ -> $[printing/1]
+        [printing/sep]$ -> $[printing/sep]
+        [printing/0][/output] -> [printed/0][/output]
+        [printing/1][/output] -> [printed/1][/output]
+        [printing/sep][/output] -> [printed/sep][/output]
+    0[do_print/cell/2] -> [do_print/cell/2]0[printing/0]
+    1[do_print/cell/2] -> [do_print/cell/2]1[printing/1]
+    [cell][do_print/cell/2] -> [cell][printing/sep]
+
+
+# TODO: think about non-8-bit mem cell situation
+# what if width of provided input does not match memory cell size?
+# while inp: inp-=1; mem+=1 # <- this will work, but it is slow
+
+# TODO: what should happen when EOF is reached? write 0? do nothing? halt with error?
+
+# ,
+[do_read] -> [do_read/reader][do_read/clear_cell]
+    [do_read/clear_cell][mp][cell]0 -> [do_read/clear_cell][mp][cell]
+    [do_read/clear_cell][mp][cell]1 -> [do_read/clear_cell][mp][cell]
+    [do_read/clear_cell][mp][cell][/cell] -> [mp][cell][/cell]
+    $$ [ip] [/code] [memory] [cell] 0 1 [/cell] + - < > [ ] . ,
+    [do_read/clear_cell]$ -> $[do_read/clear_cell]
+
+
+        [do_read/0][mp][cell] -> [mp][cell]0
+        [do_read/1][mp][cell] -> [mp][cell]1
+        $$ [/input] [code] [label/active_loop] [ip] [/code] [memory] [cell] 0 1 [/cell] + - < > [ ] . , |
+        [do_read/0]$ -> $[do_read/0]
+        [do_read/1]$ -> $[do_read/1]
+    [input][do_read/reader]0 -> [input][do_read/reader][do_read/0]
+    [input][do_read/reader]1 -> [input][do_read/reader][do_read/1]
+    [input][do_read/reader]| -> [input]
+    # if no input is provided - halt:
+    [input][do_read/reader][/input] ->. [input][err/no_input][/input]
+    $$ [/input] [code] [label/active_loop] [ip] + - < > [ ] . , 0 1 |
+    $[do_read/reader] -> [do_read/reader]$
+
+
+# ip
+[ip][/code] -> [halt][/code]
+[ip]+ -> +[ip][do_plus]
+[ip]- -> -[ip][do_minus]
+[ip]> -> >[ip][do_right]
+[ip]< -> <[ip][do_left]
+[ip][ -> [[wait_loop_start]
+[ip]] -> ][wait_loop_end]
+[ip]. -> .[ip][do_print]
+[ip], -> ,[ip][do_read]
+
+# memory fetching
+[fetch]0 -> 0[fetch]
+[fetch]1 -> [fetch/true]1
+[fetch][/cell] -> [fetch/false][/cell]
+
+$$ [cell] 0 1 [/cell] [mp] [memory] [/code]  + - < > [ ] . ,
+$[fetch/false] -> [fetch/false]$
+$[fetch/true] -> [fetch/true]$
+
+# no rule above matched => we are implicitly waiting for memory fetch
+# this rule matches pretty much at any moment
+[mp][cell] -> [mp][cell][fetch]
+
